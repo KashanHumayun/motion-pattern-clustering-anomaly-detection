@@ -1,26 +1,41 @@
 # Motion Pattern Clustering and Injury-Risk Anomaly Detection
 
-Unsupervised learning pipeline for clustering human motion patterns and flagging high-risk movement anomalies from wearable or body-movement data.
+Unsupervised learning pipeline for grouping motion into interpretable strain clusters and flagging high-risk movement anomalies. The repository includes a runnable synthetic-data workflow so the clustering, anomaly detection, and visualisation stack can be demonstrated immediately.
 
-## Scope
+## What This Repo Includes
 
-- Clustering: K-Means and DBSCAN
-- Anomaly detection: Isolation Forest
-- Interpretation: PCA and t-SNE visualisation
-- Goal: identify low-, medium-, and high-strain movement profiles without dense labels
+- K-Means clustering for low-, medium-, and high-strain grouping
+- DBSCAN for density-based structure and noise detection
+- Isolation Forest for high-risk anomaly flagging
+- PCA and t-SNE visualisation exports for analysis and reporting
+- CLI that writes summary metrics, analysis tables, saved models, and plots
 
-## Planned Workflow
+## Quick Start
 
-1. Prepare unlabelled motion data
-2. Extract movement descriptors and strain indicators
-3. Cluster motion patterns
-4. Detect high-risk anomalous events
-5. Visualise cluster structure and outlier behaviour for reporting
+```bash
+python -m pip install -r requirements.txt
+python -m pip install -e .
+python -m motion_pattern.cli --output-dir reports/demo
+```
 
-## Repository Structure
+## Project Structure
 
-- `data/` for sensor and motion datasets
-- `notebooks/` for exploratory analysis
-- `src/` for clustering and anomaly detection code
-- `models/` for saved pipelines
-- `reports/` for plots and summaries
+- `src/motion_pattern/` clustering and anomaly detection code
+- `tests/` smoke test for the full demo run
+- `reports/` generated plots and summary outputs
+- `data/` place real movement datasets here
+- `models/` reserved for persisted pipelines or exported artifacts
+
+## Replacing The Demo Data
+
+The current synthetic generator creates motion segments with acceleration, jerk, flexion, arm elevation, repetition, load, and asymmetry features. To adapt this to a real dataset, provide a table with the feature columns listed in `src/motion_pattern/pipeline.py` and then reuse the same unsupervised analysis flow.
+
+## Output Artifacts
+
+Running the demo writes:
+
+- `reports/demo/summary.json`
+- `reports/demo/motion_analysis.csv`
+- `reports/demo/motion_patterns.png`
+- `reports/demo/unsupervised_models.joblib`
+- `reports/demo/synthetic_motion_sample.csv`
