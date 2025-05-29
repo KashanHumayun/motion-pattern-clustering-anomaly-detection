@@ -53,12 +53,16 @@ The strongest flagged samples consistently combine extreme trunk flexion, elevat
 - `reports/demo/motion_analysis.csv` with cluster assignments, anomaly scores, and review notes
 - `reports/demo/motion_patterns.png` with PCA and t-SNE visualisations
 - `reports/demo/unsupervised_models.joblib` containing the fitted demo pipeline
+- `models/demo/unsupervised_models.joblib` as the saved reusable demo artifact
+- `notebooks/demo_walkthrough.ipynb` for quick analysis in Jupyter
 
 ## Project Structure
 
 - `src/motion_pattern/` clustering and anomaly detection code
 - `tests/` smoke test for the full demo run
 - `reports/` generated plots and summary outputs
+- `models/demo/` stored demo model artifact
+- `notebooks/demo_walkthrough.ipynb` starter analysis notebook
 - `data/` place real movement datasets here
 - `models/` reserved for persisted pipelines or exported artifacts
 
