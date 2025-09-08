@@ -4,21 +4,28 @@ import argparse
 import json
 from pathlib import Path
 
-from .pipeline import run_demo
+from .pipeline import run_pipeline
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run the motion clustering and anomaly detection demo pipeline."
+        description="Run the motion clustering and anomaly detection pipeline on real PAMAP2 data."
     )
-    parser.add_argument("--output-dir", type=Path, default=Path("reports/demo"))
-    parser.add_argument("--samples", type=int, default=360)
+    parser.add_argument("--project-root", type=Path, default=Path("."))
+    parser.add_argument("--output-dir", type=Path, default=Path("reports/results"))
+    parser.add_argument("--model-dir", type=Path, default=Path("models/results"))
+    parser.add_argument("--subject-limit", type=int, default=None)
     return parser
 
 
 def main() -> None:
     args = build_parser().parse_args()
-    result = run_demo(output_dir=args.output_dir, n_samples=args.samples)
+    result = run_pipeline(
+        project_root=args.project_root.resolve(),
+        output_dir=args.output_dir,
+        model_dir=args.model_dir,
+        subject_limit=args.subject_limit,
+    )
     print(json.dumps(result["anomaly_detection"], indent=2))
 
 

@@ -1,0 +1,61 @@
+{
+  "windows": 3829,
+  "subjects": 9,
+  "kmeans": {
+    "silhouette_score": 0.22858516371840956,
+    "cluster_to_band": {
+      "2": "low_strain",
+      "0": "medium_strain",
+      "1": "high_strain"
+    },
+    "band_counts": {
+      "low_strain": 1802,
+      "medium_strain": 1766,
+      "high_strain": 261
+    }
+  },
+  "dbscan": {
+    "clusters_found": 13,
+    "noise_points": 222
+  },
+  "anomaly_detection": {
+    "anomaly_count": 307,
+    "top_anomalies": [
+      {
+        "subject_id": "subject108",
+        "activity_name": "rope_jumping",
+        "strain_band": "high_strain",
+        "anomaly_score": 0.7017173669041276,
+        "review_note": "Flag for manual review. Assigned to the highest motion-strain cluster. Contains high-intensity locomotion."
+      },
+      {
+        "subject_id": "subject108",
+        "activity_name": "rope_jumping",
+        "strain_band": "high_strain",
+        "anomaly_score": 0.70024985075678,
+        "review_note": "Flag for manual review. Assigned to the highest motion-strain cluster. Contains high-intensity locomotion."
+      },
+      {
+        "subject_id": "subject105",
+        "activity_name": "running",
+        "strain_band": "high_strain",
+        "anomaly_score": 0.6787866975206955,
+        "review_note": "Flag for manual review. Assigned to the highest motion-strain cluster. Contains high-intensity locomotion."
+      },
+      {
+        "subject_id": "subject106",
+        "activity_name": "running",
+        "strain_band": "high_strain",
+        "anomaly_score": 0.6774448654641262,
+        "review_note": "Flag for manual review. Assigned to the highest motion-strain cluster. Contains high-intensity locomotion."
+      },
+      {
+        "subject_id": "subject108",
+        "activity_name": "rope_jumping",
+        "strain_band": "high_strain",
+        "anomaly_score": 0.6747565565815103,
+        "review_note": "Flag for manual review. Assigned to the highest motion-strain cluster. Contains high-intensity locomotion."
+      }
+    ]
+  }
+}

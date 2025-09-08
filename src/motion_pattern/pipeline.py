@@ -13,146 +13,257 @@ from sklearn.decomposition import PCA
 from sklearn.ensemble import IsolationForest
 from sklearn.manifold import TSNE
 from sklearn.metrics import silhouette_score
-from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
-FEATURE_COLUMNS = [
-    "acceleration_rms",
-    "jerk_rms",
-    "trunk_flexion_deg",
-    "arm_elevation_deg",
-    "repetition_rate",
-    "symmetry_index",
-    "load_proxy",
-    "duration_s",
+PAMAP2_ACTIVITY_NAMES = {
+    1: "lying",
+    2: "sitting",
+    3: "standing",
+    4: "walking",
+    5: "running",
+    6: "cycling",
+    7: "nordic_walking",
+    9: "watching_tv",
+    10: "computer_work",
+    11: "car_driving",
+    12: "ascending_stairs",
+    13: "descending_stairs",
+    16: "vacuum_cleaning",
+    17: "ironing",
+    18: "folding_laundry",
+    19: "house_cleaning",
+    20: "playing_soccer",
+    24: "rope_jumping",
+}
+
+PAMAP2_COLUMNS = ["timestamp", "activity_id", "heart_rate"]
+for _sensor in ["hand", "chest", "ankle"]:
+    PAMAP2_COLUMNS.extend(
+        [
+            f"{_sensor}_temp",
+            f"{_sensor}_acc16_x",
+            f"{_sensor}_acc16_y",
+            f"{_sensor}_acc16_z",
+            f"{_sensor}_acc6_x",
+            f"{_sensor}_acc6_y",
+            f"{_sensor}_acc6_z",
+            f"{_sensor}_gyro_x",
+            f"{_sensor}_gyro_y",
+            f"{_sensor}_gyro_z",
+            f"{_sensor}_mag_x",
+            f"{_sensor}_mag_y",
+            f"{_sensor}_mag_z",
+            f"{_sensor}_ori_1",
+            f"{_sensor}_ori_2",
+            f"{_sensor}_ori_3",
+            f"{_sensor}_ori_4",
+        ]
+    )
+
+SENSOR_COLUMNS = [
+    "hand_acc16_x",
+    "hand_acc16_y",
+    "hand_acc16_z",
+    "hand_gyro_x",
+    "hand_gyro_y",
+    "hand_gyro_z",
+    "chest_acc16_x",
+    "chest_acc16_y",
+    "chest_acc16_z",
+    "chest_gyro_x",
+    "chest_gyro_y",
+    "chest_gyro_z",
+    "ankle_acc16_x",
+    "ankle_acc16_y",
+    "ankle_acc16_z",
 ]
 
 STRAIN_BANDS = ["low_strain", "medium_strain", "high_strain"]
 
 
-def generate_synthetic_motion_dataset(
-    n_samples: int = 360,
-    random_state: int = 42,
+def find_dataset_root(project_root: Path) -> Path:
+    return project_root / "data" / "raw" / "pamap2" / "PAMAP2_Dataset" / "PAMAP2_Dataset" / "Protocol"
+
+
+def extract_window_features(window: np.ndarray) -> np.ndarray:
+    features: list[float] = []
+    for channel in range(window.shape[1]):
+        signal = window[:, channel]
+        features.extend(
+            [
+                float(signal.mean()),
+                float(signal.std()),
+                float(np.sqrt(np.mean(signal**2))),
+            ]
+        )
+    return np.asarray(features, dtype=float)
+
+
+def load_windowed_motion_data(
+    protocol_root: Path,
+    subject_limit: int | None = None,
+    downsample: int = 5,
+    window_size: int = 200,
+    step_size: int = 100,
 ) -> pd.DataFrame:
-    rng = np.random.default_rng(random_state)
     rows: list[dict[str, Any]] = []
-    templates = {
-        "low_strain": {
-            "acceleration_rms": (0.45, 0.12),
-            "jerk_rms": (0.28, 0.1),
-            "trunk_flexion_deg": (18.0, 6.0),
-            "arm_elevation_deg": (35.0, 10.0),
-            "repetition_rate": (5.0, 1.8),
-            "symmetry_index": (0.14, 0.04),
-            "load_proxy": (2.5, 1.0),
-            "duration_s": (8.0, 2.0),
-        },
-        "medium_strain": {
-            "acceleration_rms": (0.82, 0.16),
-            "jerk_rms": (0.55, 0.14),
-            "trunk_flexion_deg": (38.0, 8.0),
-            "arm_elevation_deg": (62.0, 12.0),
-            "repetition_rate": (8.5, 2.0),
-            "symmetry_index": (0.25, 0.06),
-            "load_proxy": (5.5, 1.5),
-            "duration_s": (10.5, 2.5),
-        },
-        "high_strain": {
-            "acceleration_rms": (1.28, 0.22),
-            "jerk_rms": (0.92, 0.18),
-            "trunk_flexion_deg": (58.0, 10.0),
-            "arm_elevation_deg": (92.0, 14.0),
-            "repetition_rate": (11.5, 2.2),
-            "symmetry_index": (0.38, 0.08),
-            "load_proxy": (8.5, 2.0),
-            "duration_s": (12.0, 2.8),
-        },
+    subject_paths = sorted(protocol_root.glob("subject10*.dat"))
+    if subject_limit is not None:
+        subject_paths = subject_paths[:subject_limit]
+
+    use_columns = ["activity_id", *SENSOR_COLUMNS]
+    for subject_path in subject_paths:
+        frame = pd.read_csv(
+            subject_path,
+            sep=r"\s+",
+            header=None,
+            names=PAMAP2_COLUMNS,
+            usecols=use_columns,
+            na_values="NaN",
+        )
+        frame = frame[frame["activity_id"].isin(PAMAP2_ACTIVITY_NAMES)].dropna().iloc[::downsample].reset_index(drop=True)
+        values = frame[SENSOR_COLUMNS].to_numpy(dtype=float)
+        labels = frame["activity_id"].map(PAMAP2_ACTIVITY_NAMES).to_numpy(dtype=object)
+
+        for start in range(0, len(frame) - window_size + 1, step_size):
+            stop = start + window_size
+            window = values[start:stop]
+            activity = pd.Series(labels[start:stop]).mode().iat[0]
+            feature_vector = extract_window_features(window)
+            row = {
+                "subject_id": subject_path.stem,
+                "window_start": int(start),
+                "window_stop": int(stop),
+                "activity_name": str(activity),
+            }
+            for index, value in enumerate(feature_vector):
+                row[f"f_{index:02d}"] = float(value)
+            rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def compute_risk_score(feature_frame: pd.DataFrame) -> pd.Series:
+    feature_values = feature_frame.filter(like="f_")
+    rms_like = feature_values.iloc[:, 2::3].mean(axis=1)
+    std_like = feature_values.iloc[:, 1::3].mean(axis=1)
+    return 0.6 * rms_like + 0.4 * std_like
+
+
+def build_review_note(row: pd.Series) -> str:
+    notes: list[str] = []
+    if row["is_anomaly"]:
+        notes.append("Flag for manual review.")
+    if row["strain_band"] == "high_strain":
+        notes.append("Assigned to the highest motion-strain cluster.")
+    if row["activity_name"] in {"rope_jumping", "running", "playing_soccer", "ascending_stairs", "descending_stairs"}:
+        notes.append("Contains high-intensity locomotion.")
+    if row["activity_name"] in {"vacuum_cleaning", "house_cleaning", "folding_laundry", "ironing"}:
+        notes.append("Household task pattern may include repetitive upper-body motion.")
+    if not notes:
+        notes.append("Typical motion signature for its cluster.")
+    return " ".join(notes)
+
+
+def map_clusters_to_bands(frame: pd.DataFrame) -> dict[int, str]:
+    ordered = frame.groupby("kmeans_cluster")["risk_score"].mean().sort_values().index.tolist()
+    return {cluster: STRAIN_BANDS[index] for index, cluster in enumerate(ordered)}
+
+
+def save_visualisation(frame: pd.DataFrame, output_path: Path) -> None:
+    plt.style.use("seaborn-v0_8-whitegrid")
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+
+    colors = {
+        "low_strain": "#2a9d8f",
+        "medium_strain": "#e9c46a",
+        "high_strain": "#e76f51",
     }
+    for band, subset in frame.groupby("strain_band", sort=False):
+        axes[0].scatter(subset["pca_1"], subset["pca_2"], s=18, alpha=0.7, label=band, color=colors.get(band, "#577590"))
+    axes[0].set_title("PCA View of PAMAP2 Motion Windows")
+    axes[0].set_xlabel("PCA 1")
+    axes[0].set_ylabel("PCA 2")
+    axes[0].legend()
 
-    bands = list(templates)
-    for sample_id in range(n_samples):
-        band = bands[sample_id % len(bands)]
-        template = templates[band]
-        sample = {
-            feature: float(np.clip(rng.normal(mean, std), 0.02, None))
-            for feature, (mean, std) in template.items()
-        }
-        if rng.random() < 0.07:
-            sample["acceleration_rms"] *= rng.uniform(1.6, 2.2)
-            sample["jerk_rms"] *= rng.uniform(1.8, 2.5)
-            sample["trunk_flexion_deg"] += rng.uniform(12.0, 25.0)
-            sample["arm_elevation_deg"] += rng.uniform(10.0, 24.0)
-            sample["symmetry_index"] = min(0.95, sample["symmetry_index"] + rng.uniform(0.12, 0.25))
-        sample["known_strain_band"] = band
-        sample["sample_id"] = f"M{sample_id:04d}"
-        rows.append(sample)
+    anomaly_colors = np.where(frame["is_anomaly"], "#d62828", "#577590")
+    axes[1].scatter(frame["tsne_1"], frame["tsne_2"], s=18, alpha=0.7, c=anomaly_colors)
+    axes[1].set_title("t-SNE View With Anomaly Flags")
+    axes[1].set_xlabel("t-SNE 1")
+    axes[1].set_ylabel("t-SNE 2")
 
-    frame = pd.DataFrame(rows)
-    frame["risk_score"] = (
-        0.22 * frame["acceleration_rms"]
-        + 0.18 * frame["jerk_rms"]
-        + 0.02 * frame["trunk_flexion_deg"]
-        + 0.015 * frame["arm_elevation_deg"]
-        + 0.03 * frame["repetition_rate"]
-        + 0.25 * frame["symmetry_index"]
-        + 0.04 * frame["load_proxy"]
-    )
-    return frame
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=180, bbox_inches="tight")
+    plt.close(fig)
 
 
-def run_demo(
+def run_pipeline(
+    project_root: Path,
     output_dir: Path,
-    n_samples: int = 360,
+    model_dir: Path,
+    subject_limit: int | None = None,
 ) -> dict[str, Any]:
+    dataset_root = find_dataset_root(project_root)
     output_dir.mkdir(parents=True, exist_ok=True)
-    frame = generate_synthetic_motion_dataset(n_samples=n_samples)
+    model_dir.mkdir(parents=True, exist_ok=True)
+
+    frame = load_windowed_motion_data(dataset_root, subject_limit=subject_limit)
+    feature_columns = [column for column in frame.columns if column.startswith("f_")]
+    feature_matrix = frame[feature_columns].to_numpy(dtype=float)
 
     scaler = StandardScaler()
-    scaled_features = scaler.fit_transform(frame[FEATURE_COLUMNS])
+    scaled = scaler.fit_transform(feature_matrix)
 
     kmeans = KMeans(n_clusters=3, n_init=20, random_state=42)
-    frame["kmeans_cluster"] = kmeans.fit_predict(scaled_features)
-    cluster_band_map = _map_clusters_to_bands(frame)
-    frame["strain_band"] = frame["kmeans_cluster"].map(cluster_band_map)
+    frame["kmeans_cluster"] = kmeans.fit_predict(scaled)
+    frame["risk_score"] = compute_risk_score(frame)
+    cluster_map = map_clusters_to_bands(frame)
+    frame["strain_band"] = frame["kmeans_cluster"].map(cluster_map)
 
-    dbscan = DBSCAN(eps=1.1, min_samples=8)
-    frame["dbscan_cluster"] = dbscan.fit_predict(scaled_features)
+    dbscan = DBSCAN(eps=3.5, min_samples=10)
+    frame["dbscan_cluster"] = dbscan.fit_predict(scaled)
 
     isolation_forest = IsolationForest(contamination=0.08, random_state=42)
-    frame["is_anomaly"] = isolation_forest.fit_predict(scaled_features) == -1
-    frame["anomaly_score"] = -isolation_forest.score_samples(scaled_features)
-    frame["review_note"] = frame.apply(_build_review_note, axis=1)
+    frame["is_anomaly"] = isolation_forest.fit_predict(scaled) == -1
+    frame["anomaly_score"] = -isolation_forest.score_samples(scaled)
 
     pca = PCA(n_components=2, random_state=42)
-    pca_components = pca.fit_transform(scaled_features)
+    pca_components = pca.fit_transform(scaled)
     frame["pca_1"] = pca_components[:, 0]
     frame["pca_2"] = pca_components[:, 1]
 
-    perplexity = max(5, min(30, len(frame) // 12))
-    tsne = TSNE(n_components=2, learning_rate="auto", init="pca", perplexity=perplexity, random_state=42)
-    tsne_components = tsne.fit_transform(scaled_features)
-    frame["tsne_1"] = tsne_components[:, 0]
-    frame["tsne_2"] = tsne_components[:, 1]
+    tsne_sample = min(len(frame), 1500)
+    tsne_indices = np.linspace(0, len(frame) - 1, tsne_sample, dtype=int)
+    tsne = TSNE(n_components=2, init="pca", learning_rate="auto", perplexity=min(30, max(5, tsne_sample // 20)), random_state=42)
+    tsne_components = tsne.fit_transform(scaled[tsne_indices])
+    frame["tsne_1"] = np.nan
+    frame["tsne_2"] = np.nan
+    frame.loc[tsne_indices, "tsne_1"] = tsne_components[:, 0]
+    frame.loc[tsne_indices, "tsne_2"] = tsne_components[:, 1]
+    frame["tsne_1"] = frame["tsne_1"].interpolate(limit_direction="both")
+    frame["tsne_2"] = frame["tsne_2"].interpolate(limit_direction="both")
 
-    _save_visualisations(frame, output_dir)
+    frame["review_note"] = frame.apply(build_review_note, axis=1)
     frame.to_csv(output_dir / "motion_analysis.csv", index=False)
-    frame.head(500).to_csv(output_dir / "synthetic_motion_sample.csv", index=False)
+    save_visualisation(frame, output_dir / "motion_patterns.png")
+
     joblib.dump(
         {
             "scaler": scaler,
             "kmeans": kmeans,
             "dbscan": dbscan,
             "isolation_forest": isolation_forest,
-            "cluster_band_map": cluster_band_map,
+            "cluster_map": cluster_map,
+            "feature_columns": feature_columns,
         },
-        output_dir / "unsupervised_models.joblib",
+        model_dir / "unsupervised_models.joblib",
     )
 
     summary = {
-        "samples": int(len(frame)),
+        "windows": int(len(frame)),
+        "subjects": int(frame["subject_id"].nunique()),
         "kmeans": {
-            "silhouette_score": float(silhouette_score(scaled_features, frame["kmeans_cluster"])),
-            "cluster_to_band": {str(key): value for key, value in cluster_band_map.items()},
+            "silhouette_score": float(silhouette_score(scaled, frame["kmeans_cluster"])),
+            "cluster_to_band": {str(key): value for key, value in cluster_map.items()},
             "band_counts": frame["strain_band"].value_counts().to_dict(),
         },
         "dbscan": {
@@ -162,77 +273,14 @@ def run_demo(
         "anomaly_detection": {
             "anomaly_count": int(frame["is_anomaly"].sum()),
             "top_anomalies": frame.sort_values("anomaly_score", ascending=False)
-            .head(5)[["sample_id", "strain_band", "anomaly_score", "review_note"]]
+            .head(5)[["subject_id", "activity_name", "strain_band", "anomaly_score", "review_note"]]
             .to_dict(orient="records"),
         },
     }
 
     with (output_dir / "summary.json").open("w", encoding="utf-8") as handle:
         json.dump(_json_ready(summary), handle, indent=2)
-
     return summary
-
-
-def _map_clusters_to_bands(frame: pd.DataFrame) -> dict[int, str]:
-    ordered_clusters = (
-        frame.groupby("kmeans_cluster")["risk_score"]
-        .mean()
-        .sort_values()
-        .index
-        .tolist()
-    )
-    return {cluster: STRAIN_BANDS[index] for index, cluster in enumerate(ordered_clusters)}
-
-
-def _build_review_note(row: pd.Series) -> str:
-    notes: list[str] = []
-    if row["is_anomaly"]:
-        notes.append("Flag for manual review.")
-    if row["trunk_flexion_deg"] > 60:
-        notes.append("Extreme trunk flexion observed.")
-    if row["arm_elevation_deg"] > 100:
-        notes.append("Sustained elevated arm posture.")
-    if row["jerk_rms"] > 1.2:
-        notes.append("High jerk event suggests abrupt movement.")
-    if row["symmetry_index"] > 0.45:
-        notes.append("Asymmetric loading pattern detected.")
-    if not notes:
-        notes.append("Typical movement signature for cluster.")
-    return " ".join(notes)
-
-
-def _save_visualisations(frame: pd.DataFrame, output_dir: Path) -> None:
-    plt.style.use("seaborn-v0_8-whitegrid")
-    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
-
-    color_map = {
-        "low_strain": "#2a9d8f",
-        "medium_strain": "#e9c46a",
-        "high_strain": "#e76f51",
-    }
-    for band, subset in frame.groupby("strain_band", sort=False):
-        axes[0].scatter(
-            subset["pca_1"],
-            subset["pca_2"],
-            s=28,
-            alpha=0.75,
-            label=band,
-            color=color_map.get(str(band), "#457b9d"),
-        )
-    axes[0].set_title("PCA View of Motion Clusters")
-    axes[0].set_xlabel("PCA 1")
-    axes[0].set_ylabel("PCA 2")
-    axes[0].legend()
-
-    anomaly_colors = np.where(frame["is_anomaly"], "#d62828", "#577590")
-    axes[1].scatter(frame["tsne_1"], frame["tsne_2"], s=26, alpha=0.75, c=anomaly_colors)
-    axes[1].set_title("t-SNE View With Anomaly Flags")
-    axes[1].set_xlabel("t-SNE 1")
-    axes[1].set_ylabel("t-SNE 2")
-
-    fig.tight_layout()
-    fig.savefig(output_dir / "motion_patterns.png", dpi=180, bbox_inches="tight")
-    plt.close(fig)
 
 
 def _json_ready(value: Any) -> Any:
