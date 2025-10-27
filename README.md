@@ -1,16 +1,37 @@
-# Motion Pattern Clustering and Injury-Risk Anomaly Detection
+# Motion Pattern Clustering and Anomaly Detection
 
-Real-data unsupervised motion analysis pipeline built on the PAMAP2 protocol recordings. The repository windows raw IMU streams, clusters movement patterns into strain bands, detects anomalies, and exports visualisations for review.
+This repository covers the more exploratory part of the project set: unsupervised analysis of multi-sensor motion data. Instead of predicting predefined classes, it examines whether windowed PAMAP2 signals form meaningful clusters and whether higher-intensity or uncommon movement segments can be highlighted for manual review.
 
-![Real-data motion patterns](reports/results/motion_patterns.png)
+The work is framed as a student research exercise in motion pattern discovery. The outputs should therefore be interpreted as exploratory findings rather than validated injury-risk labels.
+
+![Motion patterns](reports/results/motion_patterns.png)
+
+## Research question
+
+Can simple unsupervised methods applied to windowed IMU features separate motion patterns into interpretable groups and identify windows that may represent unusually intense or atypical movement?
 
 ## Dataset
 
-- PAMAP2 Physical Activity Monitoring
-- Raw protocol recordings from 9 subjects
-- Windowed IMU features from hand, chest, and ankle sensors
+The study uses the PAMAP2 Physical Activity Monitoring dataset from the raw protocol files under `data/raw/pamap2/`.
 
-## Current Results
+For the checked-in run:
+- 9 subjects were included
+- 3,829 windows were analysed
+- hand, chest, and ankle IMU channels were used to build feature vectors
+
+## Method
+
+The pipeline:
+- windows the continuous PAMAP2 recordings
+- extracts compact per-window summary features
+- applies K-Means clustering
+- applies DBSCAN for density-based grouping
+- applies Isolation Forest for anomaly detection
+- exports a review table and PCA/t-SNE visual summaries
+
+The repo also generates short review notes for flagged windows to make qualitative inspection easier.
+
+## Current snapshot
 
 | Component | Result |
 | --- | --- |
@@ -20,17 +41,9 @@ Real-data unsupervised motion analysis pipeline built on the PAMAP2 protocol rec
 | DBSCAN | 13 dense clusters with 222 noise windows |
 | Isolation Forest | 307 anomaly flags |
 
-Top anomalies are dominated by high-intensity activities such as `rope_jumping` and `running`, which is consistent with the motion intensity captured in the raw IMU signals.
+The strongest anomaly candidates are dominated by high-intensity activities such as `rope_jumping` and `running`, which is consistent with the motion intensity present in the source signals.
 
-## What The Pipeline Does
-
-- loads real PAMAP2 protocol recordings
-- windows and featurises multi-sensor IMU sequences
-- clusters movement windows with K-Means and DBSCAN
-- flags atypical motion windows with Isolation Forest
-- exports PCA/t-SNE visualisations and review notes
-
-## Run It
+## Reproducing the pipeline
 
 ```bash
 python -m pip install -r requirements.txt
@@ -38,7 +51,7 @@ python -m pip install -e .
 python -m motion_pattern.cli --output-dir reports/results --model-dir models/results
 ```
 
-## Output Files
+## Repository outputs
 
 - `reports/results/summary.json`
 - `reports/results/motion_analysis.csv`
@@ -46,7 +59,9 @@ python -m motion_pattern.cli --output-dir reports/results --model-dir models/res
 - `models/results/unsupervised_models.joblib`
 - `notebooks/real_data_walkthrough.ipynb`
 
-## Notes
+## Limitations
 
-- Raw downloaded PAMAP2 files are kept locally under `data/raw/` and ignored by git.
-- The checked-in outputs are produced from the real dataset rather than generated samples.
+- This is not a clinical injury-risk model.
+- The low/medium/high strain labels are inferred from cluster ordering and a simple internal risk score.
+- An anomaly flag means "worth reviewing," not "definitely unsafe."
+- Raw PAMAP2 files are expected locally under `data/raw/` and are intentionally excluded from version control.
